@@ -1,0 +1,147 @@
+name: Learning Pipeline
+
+# Триггеры — когда запускать workflow
+on:
+  # Ручной запуск с параметрами через UI
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Окружение для "тестов"'
+        required: true
+        default: 'test'
+        type: choice
+        options:
+          - test
+          - stage
+          - prod
+      test-type:
+        description: 'Тип тестов'
+        required: true
+        default: 'smoke'
+        type: choice
+        options:
+          - smoke
+          - full
+          - regression
+      should-fail:
+        description: 'Симулировать падение тестов?'
+        required: false
+        default: false
+        type: boolean
+
+  # Запуск при пуше в master
+  push:
+    branches:
+      - master
+
+  # Запуск при создании Pull Request
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  # Джоба 1: Имитация линтера
+  lint:
+    name: Lint code
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Show repository contents
+        run: |
+          echo "=== Содержимое репозитория ==="
+          ls -la
+          echo ""
+          echo "=== Информация о коммите ==="
+          echo "Branch: ${{ github.ref_name }}"
+          echo "Commit: ${{ github.sha }}"
+          echo "Author: ${{ github.actor }}"
+
+      - name: Run "linter"
+        run: |
+          echo "Запускаем проверку кода..."
+          sleep 2
+          echo "Проверено файлов: $(ls *.txt 2>/dev/null | wc -l)"
+          echo "Линтер прошёл успешно ✓"
+
+  # Джоба 2: Имитация сборки
+  build:
+    name: Build artifact
+    runs-on: ubuntu-latest
+    needs: lint  # Запустится только после успешного lint
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Simulate build
+        run: |
+          echo "Начинаем сборку..."
+          sleep 3
+          mkdir -p build
+          echo "Build version: 1.0.${{ github.run_number }}" > build/version.txt
+          echo "Built at: $(date)" >> build/version.txt
+          cat build/version.txt
+          echo "Сборка завершена ✓"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-output
+          path: build/
+
+  # Джоба 3: Имитация запуска тестов с параметрами
+  test:
+    name: Run tests on ${{ inputs.environment || 'test' }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Show test parameters
+        run: |
+          echo "=== Параметры запуска тестов ==="
+          echo "Environment: ${{ inputs.environment || 'test (default)' }}"
+          echo "Test type: ${{ inputs.test-type || 'smoke (default)' }}"
+          echo "Should fail: ${{ inputs.should-fail || 'false' }}"
+
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: build-output
+          path: build/
+
+      - name: Run tests
+        run: |
+          echo "Запускаем ${{ inputs.test-type || 'smoke' }} тесты на ${{ inputs.environment || 'test' }}..."
+          sleep 5
+          echo "Тест 1: passed ✓"
+          echo "Тест 2: passed ✓"
+          echo "Тест 3: passed ✓"
+          if [ "${{ inputs.should-fail }}" == "true" ]; then
+            echo "Тест 4: FAILED ✗"
+            exit 1
+          fi
+          echo "Тест 4: passed ✓"
+          echo "Все тесты прошли успешно ✓"
+
+  # Джоба 4: Уведомление (выполнится всегда)
+  notify:
+    name: Send notification
+    runs-on: ubuntu-latest
+    needs: [lint, build, test]
+    if: always()  # Запустить даже если предыдущие джобы упали
+    steps:
+      - name: Notify result
+        run: |
+          echo "=== Итоги пайплайна ==="
+          echo "Lint:  ${{ needs.lint.result }}"
+          echo "Build: ${{ needs.build.result }}"
+          echo "Test:  ${{ needs.test.result }}"
+          echo ""
+          if [ "${{ needs.test.result }}" == "success" ]; then
+            echo "🎉 Пайплайн завершился успешно!"
+          else
+            echo "⚠️  Пайплайн завершился с ошибкой"
+          fi
